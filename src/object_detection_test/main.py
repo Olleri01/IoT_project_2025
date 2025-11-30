@@ -36,7 +36,11 @@ class object_detection_client:
         
     def receive_string(self, sock):
         data = bytearray()
+        timeout_time = time.time() + 3
         while True:
+            if (time.time() > timeout_time):
+                raise Exception("Timeout")
+                
             bytes = bytearray(1)
             sock.recv_into(bytes, 1)
             if (bytes[0] == 0):
@@ -55,7 +59,7 @@ class object_detection_client:
             
         return sock 
         
-    def send_image(self, buf, frame_number):
+    def send_image(self, framebuffer, frame_number):
         if (self.sock == None):
             self.sock = self.connect_tcp(pool, self.hostname)
             
@@ -64,7 +68,7 @@ class object_detection_client:
             self.sock.sendall(struct.pack("<I", frame_number))
             self.sock.sendall(struct.pack("<I", len(buf)))
             
-            self.sock.sendall(buf)
+            self.sock.sendall(framebuffer)
         except Exception as e:
             self.sock.close()
             self.sock = None
@@ -80,9 +84,7 @@ class object_detection_client:
             num_of_bboxes, = struct.unpack("<I", self.receive_bytes(self.sock, 4))
             for i in range(num_of_bboxes):
                 bbox_json = self.receive_string(self.sock)
-                
                 objects.append(json.loads(bbox_json))
-                print(objects[-1])
             
             
         except Exception as e:
@@ -95,7 +97,7 @@ class object_detection_client:
 
 
 cam.size = 2
-cam.colorspace = 1;
+cam.colorspace = 1
 
 print("{}x{}".format(cam.width, cam.height))
 
@@ -104,20 +106,22 @@ buf = bytearray(2 * cam.width * cam.height)
 
 
 print("Connect Wifi")
-wifi.radio.connect(ssid="wifiname", password="password")
+wifi.radio.connect(ssid="wifiname", password="wifipassword")
 
 pool = socketpool.SocketPool(wifi.radio)
 
 print("Connecting")
 od_client = object_detection_client(pool, ("192.168.1.101", 6969))
-print("Connected")
 
 frame_number = 0
 
 while True:
     cam.capture(buf)
     od_client.send_image(buf, frame_number)
-    od_client.get_objects()
+    objects = od_client.get_objects()
+    
+    for o in objects:
+        print(o)
     
     frame_number += 1
 

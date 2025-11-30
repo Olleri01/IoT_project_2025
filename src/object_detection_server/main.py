@@ -4,9 +4,6 @@ from PIL import ImageDraw
 import pygame
 import time
 import server
-
-from ultralytics import YOLO
-
 import object_detection
 
 

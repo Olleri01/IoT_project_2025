@@ -1,16 +1,17 @@
-import threading
 from ultralytics import YOLO
 from PIL import Image
 from threading import Thread, Semaphore
 
 class object_detection:
     def __init__(self, model_name):
+        print("Creating object_detection instance")
+        print("Model: {}".format(model_name))
+    
         self.model = YOLO(model_name)
         self.queue = []
         self.objects = {}
         self.running = True
         self.queue_semaphore = Semaphore(0)
-
 
         new_thread = Thread(target=self.object_detection_loop)
         new_thread.start()
@@ -33,7 +34,7 @@ class object_detection:
 
 
     def run_object_detection_for_image(self, image, frame_number):
-        results = self.model(image)
+        results = self.model(image, verbose=False)
         
         objects_data = []
         

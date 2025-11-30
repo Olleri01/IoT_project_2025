@@ -1,13 +1,11 @@
 from PIL import Image
 import socket
-import time
 
 from threading import Thread
 import struct
 import io
-import time
 import json
-
+import time
 import numpy as np
 
 def rgb565_to_pil(framebuffer: bytes, width=160, height=120) -> Image.Image:
@@ -57,10 +55,14 @@ class server:
     def receive_bytes(self, sock, num_of_bytes):
 
         #print("Receiving {} bytes".format(num_of_bytes))
-
         data_left = num_of_bytes
         data = bytearray()
+        
+        timeout_time = time.time() + 5
         while (data_left > 0):
+            if (time.time() > timeout_time):
+                raise Exception("receive_bytes timeout")
+        
             bytes = sock.recv(data_left)
             data += bytes
             data_left -= len(bytes)
@@ -69,7 +71,12 @@ class server:
     
     def receive_string(self, sock):
         data = bytearray()
+        
+        timeout_time = time.time() + 1
         while self.running:
+            if (time.time() > timeout_time):
+                raise Exception("receive_string timeout")
+        
             bytes = sock.recv(1)
             if (len(bytes) == 0):
                 continue
@@ -89,15 +96,15 @@ class server:
 
         for o in objects:
             bbox_json_str = json.dumps(o)
-            print("sending {}\n".format(bbox_json_str));
             self.send_string(sock, bbox_json_str)
 
 
     def receive_image(self, sock):
         image_data_length, = struct.unpack("<I", self.receive_bytes(sock, struct.calcsize("<I")))
         image_data = self.receive_bytes(sock, image_data_length)
-
-        return yuv422_to_pil(image_data);
+        
+        #return rgb565_to_pil(image_data)
+        return yuv422_to_pil(image_data)
         
     def close(self):
         self.running = False
@@ -106,12 +113,13 @@ class server:
     def handle_connection(self, addr, sock):
         self.active_connections += 1
 
-        client = addr[0]
+        client = "{}:{}".format(addr[0], addr[1])
         if (client not in self.clients):
             print("New client {}".format(client))
             self.clients.append(client)
 
         sock.setblocking(True)
+        sock.settimeout(5)
     
         try:
             while True:
@@ -133,8 +141,11 @@ class server:
                     print("unknown request")
         except Exception as e:
             print(e)
-
+        
+        print("Closing connection {}".format(client))
         sock.close()
+        
+        self.clients.remove(client)
 
         self.active_connections -= 1
 
@@ -165,8 +176,6 @@ class server:
         self.last_received_image = {}
         self.last_sent_bboxes = {}
         self.clients = []
-
-        self.last_received_image_time = time.perf_counter()
 
         self.thread = Thread(target = self.server_loop, args = (ip, port))
         self.thread.start()
