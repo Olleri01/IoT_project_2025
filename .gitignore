@@ -1,0 +1,4 @@
+src/object_detection_server/__pycache__
+src/object_detection_server/venv
+src/object_detection_test/iotvenv
+src/object_detection_server/*.pt
