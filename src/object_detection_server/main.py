@@ -33,7 +33,7 @@ def draw_objects(image, objects, width, height):
 def main_loop():
     od = object_detection.object_detection("yolo11m.pt")
 
-    serv = server.server("0.0.0.0", 6969, od)
+    serv = server.server("0.0.0.0", 6968, 6969, od)
 
     width, height = 640, 480
     screen = pygame.display.set_mode((width, height))

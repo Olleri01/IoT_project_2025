@@ -1,5 +1,6 @@
 from PIL import Image
 import socket
+import ssl
 
 from threading import Thread
 import struct
@@ -8,6 +9,10 @@ import json
 import time
 import numpy as np
 
+from Crypto.Cipher import AES
+import os
+import base64
+
 def rgb565_to_pil(framebuffer: bytes, width=160, height=120) -> Image.Image:
     arr = np.frombuffer(framebuffer, dtype='>u2').reshape((height, width))
     
@@ -15,9 +20,9 @@ def rgb565_to_pil(framebuffer: bytes, width=160, height=120) -> Image.Image:
     g = (arr >> 5)  & 0x3F       # 6 bits
     b =  arr        & 0x1F       # 5 bits
 
-    r = (r * 255 / 31).astype(np.uint8)
-    g = (g * 255 / 63).astype(np.uint8)
-    b = (b * 255 / 31).astype(np.uint8)
+    r = np.clip(r * 255 / 31, 0, 255).astype(np.uint8)
+    g = np.clip(g * 255 / 63, 0, 255).astype(np.uint8)
+    b = np.clip(b * 255 / 31, 0, 255).astype(np.uint8)
 
     rgb = np.dstack((r, g, b))
     
@@ -49,12 +54,41 @@ def yuv422_to_pil(framebuffer: bytes, width=160, height=120) -> Image.Image:
 
     return Image.fromarray(rgb, mode='RGB');
 
+class ctr_stream_state:
+    #CTR mode in circuitpython's aesio library doesn't work like streamcipher with arbitary sized inputs
+    #It's encrypt_into and decrypt_into functions uses begin of the block and increments always counter
+    #This class is used to emulate same behaviour in serverside
+    def __init__(self, key):
+        #Counter starts from 0, should be safe because key is unique for each connection
+        self.key = key
+        self.counter = 0
+
+    def increment(self, datalen):
+        #Increment counter as aesio library does
+        self.counter += int(datalen/16)
+        if (datalen % 16 != 0):
+            self.counter += 1
+
+    def get_aes(self):
+        #AES instance is created for each encrypt/decrypt call
+        #IV is counter increased after each packet
+        return AES.new(self.key, AES.MODE_CTR, initial_value=self.counter, nonce=b"")
 
 class server:
 
-    def receive_bytes(self, sock, num_of_bytes):
+    def send_bytes(self, sock, streamstate, data):
+        if (streamstate == None):
+            #Plaintext is used
+            sock.sendall(data)
+        else:
+            #Data is encrypted with AES128 (CTR mode)
+            aes = streamstate.get_aes()
+            streamstate.increment(len(data))
 
-        #print("Receiving {} bytes".format(num_of_bytes))
+            encrypted_data = aes.encrypt(data)
+            sock.sendall(encrypted_data)
+
+    def receive_bytes(self, sock, streamstate, num_of_bytes):
         data_left = num_of_bytes
         data = bytearray()
         
@@ -66,75 +100,95 @@ class server:
             bytes = sock.recv(data_left)
             data += bytes
             data_left -= len(bytes)
-            
-        return data
+
+        if (streamstate == None):
+            return data
+        else:
+            aes = streamstate.get_aes()
+            streamstate.increment(num_of_bytes)
+
+            return aes.decrypt(data)
     
-    def receive_string(self, sock):
-        data = bytearray()
-        
-        timeout_time = time.time() + 1
-        while self.running:
-            if (time.time() > timeout_time):
-                raise Exception("receive_string timeout")
-        
-            bytes = sock.recv(1)
-            if (len(bytes) == 0):
-                continue
-
-            if (bytes[0] == 0):
-                break
-            data += bytes
-            
-        return data.decode("utf-8")
+    def receive_string(self, sock, streamstate):
+        #Receive header (string length)
+        string_len, = struct.unpack("<I", self.receive_bytes(sock, streamstate, struct.calcsize("<I")))
+        return self.receive_bytes(sock, streamstate, string_len).decode("utf-8")
     
-    def send_string(self, sock, str):
-        data = str.encode('utf-8') + b'\0'
-        sock.sendall(data)
+    def send_string(self, sock, streamstate, str):
+        #Strings are sent with header which is length of the string
+        self.send_bytes(sock, streamstate, struct.pack("<I", len(str)))
+        self.send_bytes(sock, streamstate, str.encode('utf-8'))
 
-    def send_objects(self, sock, objects):
-        sock.sendall(struct.pack("<I", len(objects))) #send number of objects
-
-        for o in objects:
-            bbox_json_str = json.dumps(o)
-            self.send_string(sock, bbox_json_str)
-
-
-    def receive_image(self, sock):
-        image_data_length, = struct.unpack("<I", self.receive_bytes(sock, struct.calcsize("<I")))
-        image_data = self.receive_bytes(sock, image_data_length)
-        
-        #return rgb565_to_pil(image_data)
-        return yuv422_to_pil(image_data)
-        
     def close(self):
         self.running = False
         self.thread.join()
 
     def handle_connection(self, addr, sock):
-        self.active_connections += 1
-
-        client = "{}:{}".format(addr[0], addr[1])
-        if (client not in self.clients):
-            print("New client {}".format(client))
-            self.clients.append(client)
-
         sock.setblocking(True)
         sock.settimeout(5)
-    
+        
+        #Receive one use token
+        token = sock.recv(16)
+
+        streamstate = None
+        #Generate random id for client, this is used to prevent another client getting results from another
+        client = base64.b64encode(os.urandom(16))
+
+        if (token == b'unsafeplaintext'):
+            print("New client {}:{},  plaintext!!!  id {}".format(addr[0], addr[1], client))
+        else:
+            if ((not token in self.session_keys) or self.session_keys[token] == None):
+                sock.close() #Connection is rejected if no valid token
+                return
+            
+            #Token is invalitaded immediately so that same key/token pair cannot be reused
+            key = self.session_keys[token]
+            self.session_keys[token] = None
+            streamstate = ctr_stream_state(key)
+            print("New client {}:{}, token {}   key {}   id {}".format(addr[0], addr[1], base64.b64encode(token), base64.b64encode(key), client))
+
+        self.active_connections += 1
+        self.clients.append(client)
+            
         try:
             while True:
-                request = self.receive_string(sock)
+                request = self.receive_string(sock, streamstate)
                 if (request == "send_image"):
-                    frame_number, = struct.unpack("<I", self.receive_bytes(sock, struct.calcsize("<I")))
+                    #Receive image header
+                    frame_number, image_data_length, colorspace, width, height = struct.unpack("<IIIII", self.receive_bytes(sock, streamstate, struct.calcsize("<IIIII")))
+                    
+                    #Lets check length before allocating buffers in case of header corruption
+                    #AES in CTR mode without HMAC doesn't prevent attacker from flipping bits
+                    if (image_data_length >= 1024*1024):
+                        raise Exception("too big image")
+                    
+                    #Receive image data
+                    image_data = self.receive_bytes(sock, streamstate, image_data_length)
+                    image = None
+                    
+                    #OV7670 uses either RGB565 or YUV422
+                    #Image is converted to RGB888
+                    if (colorspace == 0):
+                        image = rgb565_to_pil(image_data, width, height)
+                    elif (colorspace == 1):
+                        image = yuv422_to_pil(image_data, width, height)
 
-                    image = self.receive_image(sock)
                     if (image != None):
+                        #Image is queued for object detection. Frame number attached for each bbox
                         self.detector.queue_object_detection(image, client, frame_number)
                         self.last_received_image[client] = image
 
                 elif (request == "get_objects"):
                     objects = self.detector.get_client_objects(client)
-                    self.send_objects(sock, objects)
+                    
+                    #Header is only number of objects
+                    self.send_bytes(sock, streamstate, struct.pack("<I", len(objects)))
+
+                    for o in objects:
+                        #Object are sent as json
+                        bbox_json_str = json.dumps(o)
+                        self.send_string(sock, streamstate, bbox_json_str)
+
 
                     self.last_sent_bboxes[client] = objects
                 else:
@@ -154,31 +208,75 @@ class server:
         tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         tcp_socket.bind((ip, port))
         tcp_socket.setblocking(False)
-        tcp_socket.listen(0)
+        tcp_socket.listen(5)
 
         while self.running:
             try:
                 client_socket, addr = tcp_socket.accept()
 
                 print("Accepting connection {}".format(addr))
-
+                
+                #New thread is created for each client
                 new_thread = Thread(target=self.handle_connection, args=(addr, client_socket))
                 new_thread.start()
             except BlockingIOError:
                 pass
 
         tcp_socket.close()
+
+
+    def session_server_loop(self, ip, port):
+        #Server uses ssl to send token + key pair for client
+        #After client has received token + key via secure channel
+        #it opens TCP connection, send token in plaintext
+        #Then AES128 CTR is used to encrypt/decrypt data
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile='cert.pem', keyfile='cert.key')
+
+        tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        tcp_socket.bind((ip, port))
+        tcp_socket.setblocking(False)
+        tcp_socket.listen(5)
+        
+        with context.wrap_socket(tcp_socket, server_side=True) as ssl_socket:
+            while self.running:
+                try:
+                    client_socket, addr = ssl_socket.accept()
+
+                    print("New session {}".format(addr))
+                    
+                    #Unique token + key pair is generated
+                    #Token + key pair is unique for each session/connection
+                    #and it is invalidated as soon as tcp is connected
+                    token = os.urandom(16)
+                    key = os.urandom(16)
+                    
+                    self.session_keys[token] = key
+
+                    client_socket.sendall(token)
+                    client_socket.sendall(key)
+
+                    client_socket.close()
+
+                except BlockingIOError:
+                    pass
+
+        tcp_socket.close()
             
-    def __init__(self, ip, port, od):
+    def __init__(self, ip, port0, port1, od):
         self.detector = od
         self.running = True
         self.active_connections = 0
         self.last_received_image = {}
         self.last_sent_bboxes = {}
+        self.session_keys = {}
         self.clients = []
 
-        self.thread = Thread(target = self.server_loop, args = (ip, port))
-        self.thread.start()
+        self.thread0 = Thread(target = self.session_server_loop, args = (ip, port0))
+        self.thread1 = Thread(target = self.server_loop, args = (ip, port1))
+        self.thread0.start()
+        self.thread1.start()
 
     def get_clients(self):
         return self.clients

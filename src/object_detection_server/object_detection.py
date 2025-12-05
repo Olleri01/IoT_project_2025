@@ -17,6 +17,7 @@ class object_detection:
         new_thread.start()
 
     def queue_object_detection(self, image, client, frame_number):
+        #Images are queued for object detection
         self.queue.append((image, client, frame_number))
         self.queue_semaphore.release()
 
@@ -34,6 +35,7 @@ class object_detection:
 
 
     def run_object_detection_for_image(self, image, frame_number):
+        #Run object detection
         results = self.model(image, verbose=False)
         
         objects_data = []
@@ -63,7 +65,7 @@ class object_detection:
                 return
 
             (image, client, frame_number) = self.queue[0]
-            self.queue = self.queue[1:]
+            self.queue = self.queue[1:] #Remove image from queue
 
             objects = self.run_object_detection_for_image(image, frame_number)
 
