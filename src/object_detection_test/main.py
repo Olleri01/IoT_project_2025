@@ -8,23 +8,27 @@ import json
 import ssl
 import aesio
 import os
+import digitalio
 
 from adafruit_ov7670 import OV7670, OV7670_SIZE_DIV16
 
-i2c = busio.I2C(scl=board.GP9, sda=board.GP8)
+i2c = busio.I2C(scl=board.GP13, sda=board.GP12)
 cam = OV7670(
     i2c,
     data_pins=[
-        board.GP12, board.GP13, board.GP14, board.GP15,
-        board.GP16, board.GP17, board.GP18, board.GP19
+        board.GP0, board.GP1, board.GP2, board.GP3,
+        board.GP4, board.GP5, board.GP6, board.GP7
     ],
-    clock=board.GP11,
-    vsync=board.GP7,
-    href=board.GP21,
-    mclk=board.GP20,
+    clock=board.GP9,
+    vsync=board.GP10,
+    href=board.GP11,
+    mclk=board.GP8,
     shutdown=None,
-    reset=board.GP10,
+    reset=board.GP14,
 )
+
+pir = digitalio.DigitalInOut(board.GP28)
+pir.direction = digitalio.Direction.INPUT
               
 class object_detection_client:
     def __init__(self, sock_pool, ssl_context, host_ip, host_port0, host_port1):
@@ -168,7 +172,6 @@ print(wifi_pwd)
 
 print("Connect Wifi")
 wifi.radio.connect(ssid=wifi_ssid, password=wifi_pwd)
-
     
 print("Creating ssl_context")
 ssl_context = ssl.create_default_context()
@@ -184,18 +187,34 @@ print("Creating socket pool")
 pool = socketpool.SocketPool(wifi.radio)
 
 print("Connecting")
-od_client = object_detection_client(pool, ssl_context, "192.168.1.101", 6968, 6969)
+od_client = object_detection_client(pool, ssl_context, "192.168.1.87", 6968, 6969)
 
 frame_number = 0
 
+motion = False
+
 while True:
-    cam.capture(buf)
-    od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
-    objects = od_client.get_objects()
+    
+    if pir.value and not motion:
+        
+        print("Motion detected, taking photo")
+        cam.capture(buf)
+        motion = True
+        
+        od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
+        
+        objects = od_client.get_objects()
+        for o in objects:
+            print(o)
+        frame_number += 1
 
-    for o in objects:
-        print(o)
+        
+    elif not pir.value and motion:
+        motion = False
+    
+    time.sleep(0.1)
+    
+    
 
-    frame_number += 1
 
 

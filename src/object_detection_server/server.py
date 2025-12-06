@@ -96,7 +96,7 @@ class server:
         while (data_left > 0):
             if (time.time() > timeout_time):
                 raise Exception("receive_bytes timeout")
-        
+            
             bytes = sock.recv(data_left)
             data += bytes
             data_left -= len(bytes)
@@ -125,7 +125,8 @@ class server:
 
     def handle_connection(self, addr, sock):
         sock.setblocking(True)
-        sock.settimeout(5)
+        
+        #sock.settimeout(5)
         
         #Receive one use token
         token = sock.recv(16)
