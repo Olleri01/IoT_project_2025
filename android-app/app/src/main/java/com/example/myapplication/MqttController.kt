@@ -38,6 +38,8 @@ class MqttController(
 
     private val _jsonDump = MutableStateFlow<JSONArray?>(null)
     val jsonDump: StateFlow<JSONArray?> = _jsonDump
+    private val _newestData = MutableStateFlow<JSONObject?>(null)
+    val newestData : StateFlow<JSONObject?> = _newestData
     private val _status = MutableStateFlow<String?>("")
     val status : StateFlow<String?> = _status
 
@@ -84,11 +86,11 @@ class MqttController(
                         if (payload != null) {
 
                             try {
-                                val msg = JSONArray(payload)
-                                _jsonDump.value = msg
+                                val msg = JSONObject(payload)
+                                _newestData.value = msg
                             } catch(e: JSONException) {
                                 Log.e("MQTT", "message from MQTT server was not valid JSON syntax", e)
-                                _jsonDump.value = null
+                                _newestData.value = null
                         }
                     } }
                     .send()

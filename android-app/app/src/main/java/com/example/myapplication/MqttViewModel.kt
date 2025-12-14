@@ -20,8 +20,12 @@ class MqttViewModel(app: Application) : AndroidViewModel(app) {
         controller.publish(topic, message)
     }
 
-    fun getServerData() : StateFlow<JSONArray?> {
+    fun getAllServerData() : StateFlow<JSONArray?> {
         return controller.jsonDump
+    }
+
+    fun getNewestServerData() : StateFlow<JSONObject?> {
+        return controller.newestData
     }
 
     override fun onCleared() {

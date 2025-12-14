@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -72,8 +73,8 @@ fun App() {
         composable(Screens.HomeScreen.name) {
             HomeScreen(
                 viewModel,
-                onNavigateToHomeScreen = {
-                    navController.navigate(Screens.HomeScreen.name)
+                onNavigateToSecondaryScreen = {
+                    navController.navigate(Screens.SecondaryScreen.name)
                 }
             )
         }
@@ -84,10 +85,12 @@ fun App() {
 }
 
 @Composable
-fun HomeScreen(viewModel: MqttViewModel, onNavigateToHomeScreen: () -> Unit) {
+fun HomeScreen(viewModel: MqttViewModel, onNavigateToSecondaryScreen: () -> Unit) {
 
-    val serverData by viewModel.getServerData().collectAsState()
+    val allServerData by viewModel.getAllServerData().collectAsState()
+    val newestServerData by viewModel.getNewestServerData().collectAsState()
     val isConnected by viewModel.isConnected.collectAsState()
+    val picoStatus by viewModel.status.collectAsState()
 
     if (!isConnected) {
         Column(modifier = Modifier.fillMaxSize().
@@ -141,15 +144,47 @@ fun HomeScreen(viewModel: MqttViewModel, onNavigateToHomeScreen: () -> Unit) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold)
 
+            Spacer(modifier = Modifier.padding(12.dp))
+
+            Text(text = "Status: $picoStatus")
+
             Spacer(modifier = Modifier.weight(1f))
 
             // TODO: display data so that its not ugly
             Text(
-                text = serverData.toString()
+                text = allServerData.toString()
             )
 
-            Button(onClick = { getLast7DaysOfData(viewModel) }) {
-                Text(text = "Update data")
+            Spacer(modifier = Modifier.weight(1f))
+
+            Text(
+                text = newestServerData.toString()
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Row() {
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                Button(onClick = { getLast7DaysOfData(viewModel) }) {
+                    Text(text = "Get last 7 days of data")
+                }
+
+                Spacer(modifier = Modifier.padding(25.dp))
+
+
+                Button(onClick = {setStatus(viewModel) }) {
+                    Text(text = "Set status to 1")
+                }
+
+                Spacer(modifier = Modifier.padding(25.dp))
+
+                /*Button(onClick = {getNewestData(viewModel) }) {
+                    Text(text = "Get the newest data (no implementation")
+                }*/
+
+                Spacer(modifier = Modifier.weight(1f))
             }
 
             Spacer(modifier = Modifier.weight(1f))
@@ -159,6 +194,15 @@ fun HomeScreen(viewModel: MqttViewModel, onNavigateToHomeScreen: () -> Unit) {
 
 private fun getLast7DaysOfData(viewModel: MqttViewModel) {
     viewModel.publishMessage("skynet/on_get_data", "{\"startDate\":1765201452000,\"endDate\":1765230121000}")
+}
+
+private fun getNewestData(viewModel: MqttViewModel) {
+    // Maybe useless? idk yet im too lazy rn
+}
+
+private fun setStatus(viewModel: MqttViewModel) {
+    viewModel.publishMessage("skynet/mqtt_set_status", "{\"status\":1}")
+
 }
 
 private fun connectToServer(viewModel: MqttViewModel) {
