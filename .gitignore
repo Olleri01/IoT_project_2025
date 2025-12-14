@@ -3,3 +3,10 @@ src/object_detection_server/venv
 src/object_detection_test/iotvenv
 src/object_detection_server/*.pt
 *.key
+android-app/.gradle
+android-app/.idea
+android-app/.kotlin
+android-app/bin/
+android-app/gen/
+android-app/local-properties
+android-app/build
