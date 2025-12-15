@@ -36,7 +36,7 @@ class object_detection:
 
     def run_object_detection_for_image(self, image, frame_number):
         #Run object detection
-        results = self.model(image, verbose=False)
+        results = self.model(image, classes=[0], verbose=False) #classes=[0] for detecting people only
         
         objects_data = []
         

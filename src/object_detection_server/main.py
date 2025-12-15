@@ -8,12 +8,13 @@ import object_detection
 
 
 def draw_objects(image, objects, width, height):
+
     draw = ImageDraw.Draw(image)
     width, height = image.size
     
     for o in objects:
-        if (o["confidence"] < 0.65):
-            continue;
+        if o["confidence"] < 0.65:
+            continue
     
         box = o["bbox"]
         label = "{}: {}".format(o["class_name"], o["confidence"])
@@ -50,7 +51,14 @@ def main_loop():
                 objects = serv.get_last_sent_bboxes(serv.get_clients()[0])
 
                 if (objects != None):
+
+                    person_detected = any(o["class_id"] == 0 for o in objects)
+
+                    if not person_detected:
+                        continue
+
                     image = draw_objects(image, objects, width, height)
+                
                 
                 width, height = image.size
                 surf = pygame.image.fromstring(image.tobytes(), image.size, image.mode)

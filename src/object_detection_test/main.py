@@ -190,29 +190,38 @@ print("Connecting")
 od_client = object_detection_client(pool, ssl_context, "192.168.1.87", 6968, 6969)
 
 frame_number = 0
-
-motion = False
+capturing = False
+capture_time = 2
 
 while True:
     
-    if pir.value and not motion:
+    if pir.value and not capturing:
         
-        print("Motion detected, taking photo")
-        cam.capture(buf)
-        motion = True
-        
-        od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
-        
-        objects = od_client.get_objects()
-        for o in objects:
-            print(o)
-        frame_number += 1
+        start = time.time()
+        capturing = True
 
         
-    elif not pir.value and motion:
-        motion = False
+    if capturing:
+        if time.time() - start < capture_time:
+            print("Motion detected, taking photo")
+            cam.capture(buf)
+            od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
+            frame_number += 1
+            time.sleep(0.2)
+        else:
+            capturing = False
     
-    time.sleep(0.1)
+    objects = od_client.get_objects()
+    for o in objects:
+        print(o)
+
+            
+            
+
+    
+        
+        
+        
     
     
 
