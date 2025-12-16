@@ -9,13 +9,17 @@ import adafruit_connection_manager
 import config
 import adafruit_bmp280
 import json
-
+import DHT11_masiina
+import CRT00549L_masiina
 print("initializing i2c for bmp280")
 i2c = busio.I2C(scl = board.GP1,sda = board.GP0)#scl, sca
 
 bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, address=0x76)
-
 print("bmp280 initialization complete")
+humidity_sensor = DHT11_masiina.DHT11()
+luminance_sensor = CRT00549L_masiina.CRT00549L()
+
+
 
 
 
@@ -23,12 +27,13 @@ def collect_data():
     data_message = {"datetime": time.time(),
         "currentHourWalkers":0,
         "currentHourCyclists": 	0,
-        "location": "asdasddfg",
+        "location": "Oulu, Akselin WC",
         "temperature":bmp280.temperature,
-        "luminosity": 	0.0,
-        "humidity": 0.0,
+        "luminosity": 	luminance_sensor.read_luminance(),
+        "humidity": humidity_sensor.read_humidity(),
         "pressure": bmp280.pressure,
         }
+    print(data_message)
     return json.dumps(data_message)
     
 """topics
