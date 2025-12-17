@@ -36,7 +36,10 @@ class object_detection:
 
     def run_object_detection_for_image(self, image, frame_number):
         #Run object detection
-        results = self.model(image, classes=[0], verbose=False) #classes=[0] for detecting people only
+        #results = self.model(image, classes=[0], verbose=False) #classes=[0] for detecting people only
+        
+        #We are also counting cyclists. Bounding boxes can be filtered in pico
+        results = self.model(image, verbose=False)
         
         objects_data = []
         

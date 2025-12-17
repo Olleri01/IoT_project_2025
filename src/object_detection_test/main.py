@@ -4,226 +4,163 @@ import wifi
 import socketpool
 import struct
 import time
-import json
 import ssl
-import aesio
 import os
+
 import digitalio
 
-from adafruit_ov7670 import OV7670, OV7670_SIZE_DIV16
+import camera
+import object_detection
 
-i2c = busio.I2C(scl=board.GP13, sda=board.GP12)
-cam = OV7670(
-    i2c,
-    data_pins=[
-        board.GP0, board.GP1, board.GP2, board.GP3,
-        board.GP4, board.GP5, board.GP6, board.GP7
-    ],
-    clock=board.GP9,
-    vsync=board.GP10,
-    href=board.GP11,
-    mclk=board.GP8,
-    shutdown=None,
-    reset=board.GP14,
-)
+def connect_wifi():
+    #This function read wifi.txt file and parses wifi ssid and password
+    #returns socketpool
+    
+    print("Loading wifi credentials")
+    with open("/wifi.txt", "r") as f:
+        wifi_credentials = f.read()
+        wifi_ssid = wifi_credentials.split(' ')[0].strip()
+        wifi_pwd  = wifi_credentials.split(' ')[1].strip()
 
-pir = digitalio.DigitalInOut(board.GP28)
-pir.direction = digitalio.Direction.INPUT
-              
-class object_detection_client:
-    def __init__(self, sock_pool, ssl_context, host_ip, host_port0, host_port1):
-        self.host_ip = host_ip
-        self.host_port0 = host_port0
-        self.host_port1 = host_port1
-        self.pool = sock_pool
-        self.ssl_context = ssl_context
-        self.sock = None
-        
-        
-    def send_data(self, sock, aes, data):
-        if (aes == None):
-            sock.sendall(data)
-        else:
-            buffer = bytearray(len(data))
-            aes.encrypt_into(data, buffer)
-            sock.sendall(buffer)
-        
-    def receive_data(self, sock, aes, num_of_bytes):
-        if (aes == None):
-            data = bytearray(num_of_bytes)
-            sock.recv_into(data, num_of_bytes)
-            return data
-        else:
-            buffer = bytearray(num_of_bytes)
-            data = bytearray(num_of_bytes)
-            
-            sock.recv_into(buffer, num_of_bytes)
-            aes.decrypt_into(buffer, data)
-            
-            return data
-        
-    def receive_string(self, sock, aes):
-        string_len, = struct.unpack("<I", self.receive_data(sock, aes, struct.calcsize("<I")))
-        return self.receive_data(sock, aes, string_len).decode("utf-8")
+    print(wifi_ssid)
+    print(wifi_pwd)
+
+    print("Connect Wifi")
+    wifi.radio.connect(ssid=wifi_ssid, password=wifi_pwd)
     
-    def send_string(self, sock, aes, str):
-        self.send_data(sock, aes, struct.pack("<I", len(str)))
-        self.send_data(sock, aes, str.encode('utf-8'))
-        
+    print("Creating socket pool")
+    pool = socketpool.SocketPool(wifi.radio)
     
-    def receive_session_keys(self):
-        ssl_socket = self.ssl_context.wrap_socket(self.pool.socket(), server_hostname="coursework")
-        ssl_socket.connect((self.host_ip, self.host_port0))
-        
-        token = bytearray(16)
-        key = bytearray(16)
-        
-        ssl_socket.recv_into(token, 16)
-        ssl_socket.recv_into(key, 16)
-        ssl_socket.close()
-        
-        return (token, key)
-        
-        
-    def connect(self):
-        sock = None
+    return pool
+    
+
+def get_ssl_context():
+    #This function reads public key cert.pem and creates ssl_context
+    #Return ssl_context
+    
+    print("Creating ssl_context")
+    ssl_context = ssl.create_default_context()
+
+    print("Loading cert file")
+    with open("/cert.pem", "r") as f:
+        ca_cert = f.read()
+
+    print("Loading cert chain")
+    ssl_context.load_verify_locations(cadata=ca_cert)
+    
+    return ssl_context
+    
+    
+class pedestrian_counter:
+    def __init__(self):
+       self.confidence_treshold = 0.65
+       self.passing_duration = 1.0
+       
+       self.person_count = 0;
+       self.cyclist_count = 0;
+       
+       self.passing_person_count = 0;
+       self.passing_cyclist_count = 0;
+       self.passing_count_time = -1;
+       
+       self.frame_number = 0;
+       
+    def count_objects_per_frame(self, objects):
+        frame_dict = {};
+        for o in objects:
+            framenum = o["frame_number"];
+            if (framenum not in frame_dict):
+                frame_dict[framenum] = [0, 0];
                 
-        try:
-            if (self.ssl_context == None):
-                self.aes = None
+            if (o["class_name"] == "person" and o["confidence"] >= self.confidence_treshold):
+                frame_dict[framenum][0] += 1
+            elif (o["class_name"] == "bicycle" and o["confidence"] >= self.confidence_treshold):
+                frame_dict[framenum][1] += 1
+            
+        counts = []
+        for frame_count in frame_dict.values():
+            counts.append(frame_count)
+            
+        return counts
+        
+    
+    def update(self, cam, framebuffer, od_client):
+        cam.capture(framebuffer)
+        od_client.send_image(framebuffer, cam.colorspace, cam.width, cam.height, self.frame_number)
+        
+        objects = od_client.get_objects()
+        counts_per_frame = self.count_objects_per_frame(objects)
+        
+        
+        for counts in counts_per_frame:
+            if (counts[0] > 0 or counts[1] > 0):
+                self.passing_count_time = time.monotonic() + self.passing_duration
                 
-                sock = self.pool.socket(self.pool.AF_INET, self.pool.SOCK_STREAM)
-                sock.connect((self.host_ip, self.host_port1))
-                sock.sendall(b'unsafeplaintext')
-            else:
-                (token, key) = self.receive_session_keys()
-
-                self.aes = aesio.AES(key, aesio.MODE_CTR)
-                
-                sock = self.pool.socket(self.pool.AF_INET, self.pool.SOCK_STREAM)
-                sock.connect((self.host_ip, self.host_port1))
-                sock.sendall(token)
-        except Exception as e:
-            pass
+            self.passing_person_count = max(self.passing_person_count, counts[0])
+            self.passing_cyclist_count = max(self.passing_cyclist_count, counts[1])
+        
+        
+        if (time.monotonic() > self.passing_count_time):
+            print("Registering objects!!")
             
-        return sock 
-        
-    def send_image(self, framebuffer, colorspace, width, height, frame_number):
-        if (self.sock == None):
-            self.sock = self.connect()
-            if (self.sock == None):
-                return
-        
-        try:
-            self.send_string(self.sock, self.aes, "send_image")
-            self.send_data(self.sock, self.aes, struct.pack("<IIIII",
-                                                            frame_number,
-                                                            len(buf),
-                                                            colorspace,
-                                                            width,
-                                                            height))
-            self.send_data(self.sock, self.aes, framebuffer)
-        except Exception as e:
-            self.sock.close()
-            self.sock = None
-        
-        
-    def get_objects(self):
-        if (self.sock == None):
-            self.sock = self.connect()
-            if (self.sock == None):
-                return []
+            self.person_count += self.passing_person_count;
+            self.cyclist_count += self.passing_cyclist_count;
             
-        objects = []
-        try:
-            self.send_string(self.sock, self.aes, "get_objects")
+            self.passing_person_count = 0;
+            self.passing_cyclist_count = 0;
             
-            num_of_bboxes, = struct.unpack("<I", self.receive_data(self.sock, self.aes, 4))
-            for i in range(num_of_bboxes):
-                bbox_json = self.receive_string(self.sock, self.aes)
-                objects.append(json.loads(bbox_json))
-            
-            
-        except Exception as e:
-            print(e)
-            self.sock.close()
-            self.sock = None
-        
-        return objects
         
 
-
-cam.size = 2
-cam.colorspace = 0
-
-print("{}x{}".format(cam.width, cam.height))
-
-print("allocating framebuffer")
-buf = bytearray(2 * cam.width * cam.height)
-
-print("Loading wifi credentials")
-with open("/wifi.txt", "r") as f:
-    wifi_credentials = f.read()
-    wifi_ssid = wifi_credentials.split(' ')[0].strip()
-    wifi_pwd  = wifi_credentials.split(' ')[1].strip()
-
-print(wifi_ssid)
-print(wifi_pwd)
-
-print("Connect Wifi")
-wifi.radio.connect(ssid=wifi_ssid, password=wifi_pwd)
-    
-print("Creating ssl_context")
-ssl_context = ssl.create_default_context()
-
-print("Loading cert file")
-with open("/cert.pem", "r") as f:
-    ca_cert = f.read()
-
-print("Loading cert chain")
-ssl_context.load_verify_locations(cadata=ca_cert)
-
-print("Creating socket pool")
-pool = socketpool.SocketPool(wifi.radio)
-
-print("Connecting")
-od_client = object_detection_client(pool, ssl_context, "192.168.1.87", 6968, 6969)
-
-frame_number = 0
-capturing = False
-capture_time = 2
-
-while True:
-    
-    if pir.value and not capturing:
-        
-        start = time.time()
-        capturing = True
-
-        
-    if capturing:
-        if time.time() - start < capture_time:
-            print("Motion detected, taking photo")
-            cam.capture(buf)
-            od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
-            frame_number += 1
-            time.sleep(0.2)
-        else:
-            capturing = False
-    
-    objects = od_client.get_objects()
-    for o in objects:
-        print(o)
-
-            
-            
-
-    
-        
-        
-        
+        self.frame_number += 1;
     
     
+    
+def main():
+    sockpool = connect_wifi()
+    ssl_context = get_ssl_context()
 
+    (cam, framebuffer) = camera.init_camera(2, 0) #160x120 rgb888
+    od_client = object_detection.object_detection_client(sockpool, ssl_context, "192.168.1.101", 6968, 6969)
+
+    counter = pedestrian_counter()
+    
+    while True:
+        counter.update(cam, framebuffer, od_client)
+        
+        print("Persons: {}  Cyclists: {}".format(counter.person_count, counter.cyclist_count))
+        
+
+
+
+    #frame_number = 0
+    #capturing = False
+    #capture_time = 2
+
+    #while True:
+        
+    #    if pir.value and not capturing:
+            
+    #        start = time.time()
+    #        capturing = True
+
+            
+    #    if capturing:
+    #        if time.time() - start < capture_time:
+    #            print("Motion detected, taking photo")
+    #            cam.capture(buf)
+    #            od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
+    #            frame_number += 1
+    #            time.sleep(0.2)
+    #        else:
+    #            capturing = False
+        
+    #    objects = od_client.get_objects()
+    #    for o in objects:
+    #        print(o)
+
+
+
+if __name__ == "__main__":
+    main()
 
 
