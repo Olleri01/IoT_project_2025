@@ -2,10 +2,12 @@ import struct
 import time
 import json
 import aesio
-import os
+#import os
+
+import gc
 
 class object_detection_client:
-    def __init__(self, sock_pool, ssl_context, host_ip, host_port0, host_port1):
+    def __init__(self, sock_pool, ssl_context, host_ip, host_port0, host_port1, begin_ssl_callback, end_ssl_callback):
         self.host_ip = host_ip
         self.host_port0 = host_port0
         self.host_port1 = host_port1
@@ -13,14 +15,34 @@ class object_detection_client:
         self.ssl_context = ssl_context
         self.sock = None
         
+        self.begin_ssl_callback = begin_ssl_callback;
+        self.end_ssl_callback = end_ssl_callback;
+        
+        self.encrypt_buff = bytearray(128)
         
     def send_data(self, sock, aes, data):
         if (aes == None):
             sock.sendall(data)
         else:
-            buffer = bytearray(len(data))
-            aes.encrypt_into(data, buffer)
-            sock.sendall(buffer)
+            #Force garbage collector to run before sending image
+            gc.collect()
+            
+            dataleft = len(data)
+            src_mv = memoryview(data)
+            dst_mv = memoryview(self.encrypt_buff)
+            
+            index = 0
+            while (dataleft > 0):
+                packet_size = min(dataleft, 128)
+                aes.encrypt_into(src_mv[index:index+packet_size], dst_mv[0:packet_size])
+                sock.sendall(dst_mv[0:packet_size])
+                index += packet_size
+                dataleft -= packet_size
+            
+            
+            #buffer = bytearray(len(data))
+            #aes.encrypt_into(data, buffer)
+            #sock.sendall(buffer)
         
     def receive_data(self, sock, aes, num_of_bytes):
         if (aes == None):
@@ -55,17 +77,20 @@ class object_detection_client:
         ssl_socket.recv_into(token, 16)
         ssl_socket.recv_into(key, 16)
         ssl_socket.close()
-        
+            
         return (token, key)
         
         
     def connect(self):
         sock = None
-                
+        
+        if (self.ssl_context != None):
+            self.begin_ssl_callback();
+        
         try:
             if (self.ssl_context == None):
                 self.aes = None
-                
+ 
                 sock = self.pool.socket(self.pool.AF_INET, self.pool.SOCK_STREAM)
                 sock.connect((self.host_ip, self.host_port1))
                 sock.sendall(b'unsafeplaintext')
@@ -78,8 +103,12 @@ class object_detection_client:
                 sock.connect((self.host_ip, self.host_port1))
                 sock.sendall(token)
         except Exception as e:
+            print(e)
             sock = None
             pass
+            
+        if (self.ssl_context != None):
+            self.end_ssl_callback();
             
         return sock 
         
@@ -99,6 +128,7 @@ class object_detection_client:
                                                             height))
             self.send_data(self.sock, self.aes, framebuffer)
         except Exception as e:
+            print(e)
             self.sock.close()
             self.sock = None
         
@@ -116,6 +146,7 @@ class object_detection_client:
             num_of_bboxes, = struct.unpack("<I", self.receive_data(self.sock, self.aes, 4))
             for i in range(num_of_bboxes):
                 bbox_json = self.receive_string(self.sock, self.aes)
+
                 objects.append(json.loads(bbox_json))
             
             

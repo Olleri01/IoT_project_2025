@@ -74,6 +74,18 @@ class ctr_stream_state:
         #IV is counter increased after each packet
         return AES.new(self.key, AES.MODE_CTR, initial_value=self.counter, nonce=b"")
 
+def filter_objects(objects):
+    confidence_treshold = 0.55
+    class_names = ["person", "bicycle"]
+    
+    filtered_objects = []
+    for o in objects:
+        if (o["confidence"] > confidence_treshold and o["class_name"] in class_names):
+            filtered_objects.append(o)
+            
+    return filtered_objects
+
+
 class server:
 
     def send_bytes(self, sock, streamstate, data):
@@ -125,8 +137,7 @@ class server:
 
     def handle_connection(self, addr, sock):
         sock.setblocking(True)
-        
-        #sock.settimeout(5)
+        sock.settimeout(5)
         
         #Receive one use token
         token = sock.recv(16)
@@ -181,6 +192,8 @@ class server:
 
                 elif (request == "get_objects"):
                     objects = self.detector.get_client_objects(client)
+                    
+                    objects = filter_objects(objects)
                     
                     #Header is only number of objects
                     self.send_bytes(sock, streamstate, struct.pack("<I", len(objects)))

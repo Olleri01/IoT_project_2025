@@ -22,10 +22,10 @@ print("bmp280 initialization complete")
 def collect_data():
     data_message = {"datetime": time.time(),
         "currentHourWalkers":0,
-        "currentHourCyclists": 	0,
+        "currentHourCyclists": 0,
         "location": "asdasddfg",
         "temperature":bmp280.temperature,
-        "luminosity": 	0.0,
+        "luminosity": 0.0,
         "humidity": 0.0,
         "pressure": bmp280.pressure,
         }
@@ -63,7 +63,7 @@ queryt datakyselyitä varten
 
 try: 
     print(f"Connecting to {config.WIFI_SSID}")
-    wifi.radio.connect(config.WIFI_SSID, config.WIFI_PWD)
+    wifi.radio.connect("NokiaXR21", "Teodoliitti123")
     print(f"Connected to {config.WIFI_SSID}")
 except err:
     print("wifi connection not succesfull %s", err)
