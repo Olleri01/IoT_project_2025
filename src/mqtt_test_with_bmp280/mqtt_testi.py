@@ -68,7 +68,7 @@ queryt datakyselyitä varten
 
 try: 
     print(f"Connecting to {config.WIFI_SSID}")
-    wifi.radio.connect(config.WIFI_SSID, config.WIFI_PWD)
+    wifi.radio.connect("NokiaXR21", "Teodoliitti123")
     print(f"Connected to {config.WIFI_SSID}")
 except err:
     print("wifi connection not succesfull %s", err)

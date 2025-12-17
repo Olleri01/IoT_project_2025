@@ -13,7 +13,7 @@ def draw_objects(image, objects, width, height):
     width, height = image.size
     
     for o in objects:
-        if o["confidence"] < 0.65:
+        if o["confidence"] < 0.65 or o["class_name"] != "person":
             continue
     
         box = o["bbox"]
@@ -43,19 +43,20 @@ def main_loop():
     while running:
 
         if (len(serv.get_clients()) > 0):
-            image = serv.get_last_received_image(serv.get_clients()[0])
+            client = serv.get_clients()[0]
+            image = serv.get_last_received_image(client)
 
             if (image != None):
                 image = image.resize((width, height))
                 
-                objects = serv.get_last_sent_bboxes(serv.get_clients()[0])
+                objects = serv.get_last_sent_bboxes(client)
 
                 if (objects != None):
 
                     person_detected = any(o["class_id"] == 0 for o in objects)
 
-                    if not person_detected:
-                        continue
+                    #if not person_detected:
+                    #    continue
 
                     image = draw_objects(image, objects, width, height)
                 

@@ -1,16 +1,20 @@
+from lib import adafruit_minimqtt as MQTT
 import board
 import busio
-import wifi
-import socketpool
-import struct
 import time
+import wifi
+import adafruit_connection_manager
+import config
+import adafruit_bmp280
+import json
 import ssl
-import os
-
-import digitalio
 
 import camera
 import object_detection
+
+import socketpool
+
+import gc
 
 def connect_wifi():
     #This function read wifi.txt file and parses wifi ssid and password
@@ -30,14 +34,14 @@ def connect_wifi():
     
     print("Creating socket pool")
     pool = socketpool.SocketPool(wifi.radio)
+    #pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
     
     return pool
     
 
-def get_ssl_context():
+def get_ssl_context_for_object_detection():
     #This function reads public key cert.pem and creates ssl_context
     #Return ssl_context
-    
     print("Creating ssl_context")
     ssl_context = ssl.create_default_context()
 
@@ -49,7 +53,23 @@ def get_ssl_context():
     ssl_context.load_verify_locations(cadata=ca_cert)
     
     return ssl_context
+
+   
+def collect_data(bmp280, counter):
+    data_message = {"datetime": time.time(),
+        "currentHourWalkers": counter.person_count,
+        "currentHourCyclists": counter.cyclist_count,
+        "location": "asdasddfg",
+        "temperature":bmp280.temperature,
+        "luminosity": 0.0,
+        "humidity": 0.0,
+        "pressure": bmp280.pressure,
+        }
     
+    counter.person_count = 0
+    counter.cyclist_count = 0
+    
+    return json.dumps(data_message)
     
 class pedestrian_counter:
     def __init__(self):
@@ -101,64 +121,97 @@ class pedestrian_counter:
         
         
         if (time.monotonic() > self.passing_count_time):
-            print("Registering objects!!")
-            
             self.person_count += self.passing_person_count;
             self.cyclist_count += self.passing_cyclist_count;
             
             self.passing_person_count = 0;
             self.passing_cyclist_count = 0;
             
-        
-
         self.frame_number += 1;
     
     
     
+def connected(client, userdata,flags,rc):
+    print("mqtt connected")
+    client.subscribe("skynet/intel_data")
+
+def disconnected(client, userdata,flags):
+    print("disconnected from mqtt broker")
+
+def message(client, topic, message):
+    print(f'New msg on topic {topic}:{message}')
+    
+    
+    
+def mqttSetup(pool, ssl_contx):
+    global mqtt_client
+    mqtt_client = MQTT.MQTT(
+        broker=config.MQTT_BROKER,
+        username=config.MQTT_USER,
+        password=config.MQTT_PWD,
+        socket_pool=pool,
+        is_ssl = True,
+        ssl_context=ssl_contx,
+        )
+    mqtt_client.on_connect = connected
+    mqtt_client.on_disconnect = disconnected
+    mqtt_client.on_message = message
+    mqtt_client.connect(host = config.MQTT_BROKER, port = config.MQTT_PORT)
+   
+def print_memory_consumption():
+    free = gc.mem_free()
+    used = gc.mem_alloc()
+    total = free + used
+
+    print("RAM usage: {} kB / {} kB {}%".format(round(used/1024), round(total/1024), used*100 / total))
+   
+
+#Circuitpython can use only 1 SSL connection at time
+#These callback are used to disconnect and reconnect mqtt when object_detection_client uses SSL for key-exchange
+def object_detection_client_ssl_begin():
+    mqtt_client.disconnect()
+    
+def object_detection_client_ssl_end():
+    mqtt_client.connect(host = config.MQTT_BROKER, port = config.MQTT_PORT)
+   
 def main():
     sockpool = connect_wifi()
-    ssl_context = get_ssl_context()
-
+    ssl_context_for_od = get_ssl_context_for_object_detection()
+    ssl_context_for_mqtt = adafruit_connection_manager.get_radio_ssl_context(wifi.radio)
+    
+    mqttSetup(sockpool, ssl_context_for_mqtt);
+    
+    bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(busio.I2C(scl = board.GP27,sda = board.GP26), address=0x76)
     (cam, framebuffer) = camera.init_camera(2, 0) #160x120 rgb888
-    od_client = object_detection.object_detection_client(sockpool, ssl_context, "192.168.1.101", 6968, 6969)
+    
+    od_client = object_detection.object_detection_client(sockpool, ssl_context_for_od, "80.220.42.45", 6968, 6969, object_detection_client_ssl_begin, object_detection_client_ssl_end)
 
     counter = pedestrian_counter()
     
+    collect_interval = 10.0 #data loggin interval in seconds
+    next_collect_time = time.monotonic() + collect_interval
+    
+    prev_person_count = 0
+    prev_cyclist_count = 0
+    print("Going to mainloop")
     while True:
         counter.update(cam, framebuffer, od_client)
         
-        print("Persons: {}  Cyclists: {}".format(counter.person_count, counter.cyclist_count))
+        print_memory_consumption()
+         
+        if (prev_person_count != counter.person_count or prev_cyclist_count != counter.cyclist_count):
+            prev_person_count = counter.person_count
+            prev_cyclist_count = counter.cyclist_count
+            print("Persons: {}  Cyclists: {}".format(counter.person_count, counter.cyclist_count))
         
-
-
-
-    #frame_number = 0
-    #capturing = False
-    #capture_time = 2
-
-    #while True:
-        
-    #    if pir.value and not capturing:
+        if (time.monotonic() > next_collect_time):
+            next_collect_time = time.monotonic() + collect_interval
             
-    #        start = time.time()
-    #        capturing = True
-
+            print("Data collection")
+            #Data is collected 1 min intervals
+            message = collect_data(bmp280, counter)
+            mqtt_client.publish("skynet/intel_data", message)
             
-    #    if capturing:
-    #        if time.time() - start < capture_time:
-    #            print("Motion detected, taking photo")
-    #            cam.capture(buf)
-    #            od_client.send_image(buf, cam.colorspace, cam.width, cam.height, frame_number)
-    #            frame_number += 1
-    #            time.sleep(0.2)
-    #        else:
-    #            capturing = False
-        
-    #    objects = od_client.get_objects()
-    #    for o in objects:
-    #        print(o)
-
-
 
 if __name__ == "__main__":
     main()
