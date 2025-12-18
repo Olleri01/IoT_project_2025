@@ -247,35 +247,51 @@ class server:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile='cert.pem', keyfile='cert.key')
 
-        tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        tcp_socket.bind((ip, port))
-        tcp_socket.setblocking(False)
-        tcp_socket.listen(5)
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((ip, port))
+        server.setblocking(False)
+        server.listen(5)
         
-        with context.wrap_socket(tcp_socket, server_side=True) as ssl_socket:
-            while self.running:
+        
+        while self.running:
+            try:
+                client, addr = server.accept()  # plain TCP accept
+            except BlockingIOError:
+                time.sleep(0.01)
+                continue
+            except OSError:
+                break
+
+            try:
+                tls = context.wrap_socket(client, server_side=True)
+                print(f"New session {addr}")
+                
+                #Unique key-token pair is created
+                token = os.urandom(16)
+                key = os.urandom(16)
+
+                self.session_keys[token] = key
+                tls.sendall(token)
+                tls.sendall(key)
+                
+            except (ssl.SSLError, ConnectionResetError, BrokenPipeError) as e:
+                print(f"TLS failed from {addr}: {e!r}")
+
+            finally:
                 try:
-                    client_socket, addr = ssl_socket.accept()
-
-                    print("New session {}".format(addr))
-                    
-                    #Unique token + key pair is generated
-                    #Token + key pair is unique for each session/connection
-                    #and it is invalidated as soon as tcp is connected
-                    token = os.urandom(16)
-                    key = os.urandom(16)
-                    
-                    self.session_keys[token] = key
-
-                    client_socket.sendall(token)
-                    client_socket.sendall(key)
-
-                    client_socket.close()
-
-                except BlockingIOError:
+                    tls.close()
+                except Exception:
                     pass
-
+                try:
+                    client.close()
+                except Exception:
+                    pass
+  
+        
+        
+        
+        
         tcp_socket.close()
             
     def __init__(self, ip, port0, port1, od):

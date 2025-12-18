@@ -1,11 +1,11 @@
 from lib import adafruit_minimqtt as MQTT
 import board
 import busio
+import adafruit_bmp280
 import time
 import wifi
 import adafruit_connection_manager
 import config
-import adafruit_bmp280
 import json
 import ssl
 
@@ -13,7 +13,6 @@ import camera
 import object_detection
 
 import socketpool
-
 import gc
 
 def connect_wifi():
@@ -100,7 +99,7 @@ class pedestrian_counter:
         counts = []
         for frame_count in frame_dict.values():
             counts.append(frame_count)
-            
+        
         return counts
         
     
@@ -110,7 +109,7 @@ class pedestrian_counter:
         
         objects = od_client.get_objects()
         counts_per_frame = self.count_objects_per_frame(objects)
-        
+        gc.collect() #Try to avoid heap fragmentation
         
         for counts in counts_per_frame:
             if (counts[0] > 0 or counts[1] > 0):
@@ -170,10 +169,11 @@ def print_memory_consumption():
 #These callback are used to disconnect and reconnect mqtt when object_detection_client uses SSL for key-exchange
 def object_detection_client_ssl_begin():
     mqtt_client.disconnect()
-    
+
 def object_detection_client_ssl_end():
     mqtt_client.connect(host = config.MQTT_BROKER, port = config.MQTT_PORT)
-   
+
+
 def main():
     sockpool = connect_wifi()
     ssl_context_for_od = get_ssl_context_for_object_detection()
@@ -197,8 +197,7 @@ def main():
     while True:
         counter.update(cam, framebuffer, od_client)
         
-        print_memory_consumption()
-         
+
         if (prev_person_count != counter.person_count or prev_cyclist_count != counter.cyclist_count):
             prev_person_count = counter.person_count
             prev_cyclist_count = counter.cyclist_count
@@ -209,6 +208,7 @@ def main():
             
             print("Data collection")
             #Data is collected 1 min intervals
+            mqtt_client.loop(timeout=2)
             message = collect_data(bmp280, counter)
             mqtt_client.publish("skynet/intel_data", message)
             

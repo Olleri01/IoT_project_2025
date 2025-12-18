@@ -39,10 +39,6 @@ class object_detection_client:
                 index += packet_size
                 dataleft -= packet_size
             
-            
-            #buffer = bytearray(len(data))
-            #aes.encrypt_into(data, buffer)
-            #sock.sendall(buffer)
         
     def receive_data(self, sock, aes, num_of_bytes):
         if (aes == None):
@@ -50,11 +46,22 @@ class object_detection_client:
             sock.recv_into(data, num_of_bytes)
             return data
         else:
-            buffer = bytearray(num_of_bytes)
+            dataleft = num_of_bytes
+            
             data = bytearray(num_of_bytes)
             
-            sock.recv_into(buffer, num_of_bytes)
-            aes.decrypt_into(buffer, data)
+            src_mv = memoryview(self.encrypt_buff)
+            dst_mv = memoryview(data)
+            
+            index = 0
+            while (dataleft > 0):
+                packet_size = min(dataleft, 128)
+                
+                sock.recv_into(src_mv[0:packet_size], packet_size)
+                aes.decrypt_into(src_mv[0:packet_size], dst_mv[index:index+packet_size])
+ 
+                index += packet_size
+                dataleft -= packet_size
             
             return data
         
@@ -69,6 +76,7 @@ class object_detection_client:
     
     def receive_session_keys(self):
         ssl_socket = self.ssl_context.wrap_socket(self.pool.socket(), server_hostname="coursework")
+        
         ssl_socket.connect((self.host_ip, self.host_port0))
         
         token = bytearray(16)
@@ -77,6 +85,8 @@ class object_detection_client:
         ssl_socket.recv_into(token, 16)
         ssl_socket.recv_into(key, 16)
         ssl_socket.close()
+        
+        print("Received token")
             
         return (token, key)
         
@@ -94,6 +104,8 @@ class object_detection_client:
                 sock = self.pool.socket(self.pool.AF_INET, self.pool.SOCK_STREAM)
                 sock.connect((self.host_ip, self.host_port1))
                 sock.sendall(b'unsafeplaintext')
+                
+                sock.settimeout(5)
             else:
                 (token, key) = self.receive_session_keys()
 
@@ -102,6 +114,8 @@ class object_detection_client:
                 sock = self.pool.socket(self.pool.AF_INET, self.pool.SOCK_STREAM)
                 sock.connect((self.host_ip, self.host_port1))
                 sock.sendall(token)
+                
+                sock.settimeout(5)
         except Exception as e:
             print(e)
             sock = None
@@ -109,6 +123,9 @@ class object_detection_client:
             
         if (self.ssl_context != None):
             self.end_ssl_callback();
+            
+        if (sock != None):
+            print("Connected to OD server")
             
         return sock 
         
