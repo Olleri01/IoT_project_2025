@@ -22,6 +22,8 @@ import org.json.JSONArray
 import java.nio.ByteBuffer
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.Optional
 
 class MqttController(
@@ -79,23 +81,6 @@ class MqttController(
         scope.launch {
             try {
                 client.subscribeWith()
-                    .topicFilter("skynet/intel_data")
-                    .callback { publish: Mqtt3Publish ->
-                        Log.d("MQTT", "Payload arrived at skynet/intel_data")
-                        val payload = byteBufferToString(publish.payload)
-                        if (payload != null) {
-
-                            try {
-                                val msg = JSONObject(payload)
-                                _newestData.value = msg
-                            } catch(e: JSONException) {
-                                Log.e("MQTT", "message from MQTT server was not valid JSON syntax", e)
-                                _newestData.value = null
-                        }
-                    } }
-                    .send()
-                    .get()
-                client.subscribeWith()
                     .topicFilter("skynet/return_data")
                     .callback { publish: Mqtt3Publish ->
                         Log.d("MQTT", "Payload arrived at skynet/return_data")
@@ -103,7 +88,22 @@ class MqttController(
                         if (payload != null) {
                             try {
                                 val msg = JSONArray(payload)
-                                _jsonDump.value = msg
+                                _newestData.value = msg.getJSONObject(0)
+                                Log.d("MQTT", "JSON Object example: ${msg.getJSONObject(0)}")
+
+                                val raw = msg.getJSONObject(msg.length() - 1).get("_time")
+                                val instant = when (raw) {
+                                    is Long -> Instant.ofEpochMilli(raw)
+                                    is Int -> Instant.ofEpochMilli(raw.toLong())
+                                    is Double -> Instant.ofEpochMilli(raw.toLong())
+                                    is String -> Instant.parse(raw)
+                                    else -> error("Unsupported datetime type: ${raw::class}")
+                                }
+                                val pastDayTime = Instant.now().minus(1, ChronoUnit.HOURS)
+                                // Ignore this condition, server doesnt seem to have data old enough?
+                                //if (instant.isBefore(pastDayTime)) {
+                                    _jsonDump.value = msg
+                                //}
                             } catch(e: JSONException) {
                                 Log.e(
                                     "MQTT", "message from MQTT server was not valid JSON syntax", e)
