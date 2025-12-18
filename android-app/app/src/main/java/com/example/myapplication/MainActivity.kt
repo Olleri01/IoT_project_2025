@@ -204,7 +204,13 @@ fun ConnectedScreen(
 
         Spacer(modifier = Modifier.padding(12.dp))
 
-        Text(text = "Status: $picoStatus")
+        if (picoStatus == null || picoStatus.isEmpty()) {
+
+            Text(text = "Status: pending")
+        }
+        else {
+            Text(text = "Status: ${picoStatus[11]}")
+        }
 
         Spacer(modifier = Modifier.padding(4.dp))
 
@@ -274,12 +280,13 @@ fun ConnectedScreen(
 
         }
 
-        if (picoStatus == "{\"status\":1}") {
+        if (picoStatus == "{\"status\": 1}") {
             Button(onClick = toggleStatus,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.Green
                 )) {
-                Text(text = "Toggle status to 0")
+                Text(text = "Toggle status to 0",
+                    color = Color.Black)
             }
         }
         else {
