@@ -40,6 +40,8 @@ fun PlotData(allServerData: JSONArray?, dataName: String, title: String, labelDe
 
             val dataPointObject: JSONObject = allServerData.getJSONObject(i)
 
+            if (dataPointObject.isNull(dataName)) continue
+
             // Get x-value (epoch milli)
             val timeStamp: String = dataPointObject.getString("_time")
             val instant = Instant.parse(timeStamp)

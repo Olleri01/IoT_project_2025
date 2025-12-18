@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedButton
@@ -28,6 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.myapplication.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -72,7 +75,7 @@ fun App() {
     val navController = rememberNavController()
 
     val viewModel: MqttViewModel = viewModel()
-    viewModel.start()
+    //viewModel.start()
 
     NavHost(
         navController = navController,
@@ -107,13 +110,15 @@ fun HomeScreen(viewModel: MqttViewModel, onNavigateToSecondaryScreen: () -> Unit
     }
     else  {
         ConnectedScreen(
+            viewModel = viewModel,
             allServerData = allServerData,
             newestServerData = newestServerData,
             picoStatus = picoStatus,
 
             getLast7DaysOfData = {getLast7DaysOfData(viewModel)},
-            getNewestData = {getNewestData(viewModel)},
-            setStatus = {setStatus(viewModel) }
+            getNewestData = {getLast7DaysOfData(viewModel)},
+            getAllData = {getAllData(viewModel)},
+            toggleStatus = {toggleStatus(viewModel, picoStatus) }
         )
     }
 }
@@ -132,7 +137,7 @@ fun NoConnectionScreen(
 
         Spacer(modifier = Modifier.padding(12.dp))
 
-        Text(text =  "PLACEHOLDER_NAME",
+        Text(text = "Pedestrian Detection System",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold)
 
@@ -149,7 +154,7 @@ fun NoConnectionScreen(
                 .size(width = 350.dp, height = 80.dp)
         ) {
             Text(
-                text = "The app has no connection to the server \n Launch the server",
+                text = "The app has is not connected to the server \n Please start the connection",
                 modifier = Modifier
                     .padding(16.dp),
                 textAlign = TextAlign.Center,
@@ -168,13 +173,17 @@ fun NoConnectionScreen(
 
 @Composable
 fun ConnectedScreen(
+    viewModel: MqttViewModel,
     allServerData: JSONArray?,
     newestServerData: JSONObject?,
     picoStatus: String?,
 
     getLast7DaysOfData: () -> Unit,
     getNewestData: () -> Unit,
-    setStatus: () -> Unit
+    getAllData: () -> Unit,
+    toggleStatus: () -> Unit = {
+        toggleStatus(viewModel, picoStatus)
+    }
 )
 {
     Column(
@@ -188,39 +197,40 @@ fun ConnectedScreen(
         Spacer(modifier = Modifier.padding(12.dp))
 
         Text(
-            text =  "PLACEHOLDER_NAME",
+            text =  "Pedestrian Detection System",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.SemiBold
         )
 
         Spacer(modifier = Modifier.padding(12.dp))
 
-        Text(text = "Status: $picoStatus")
+        if (picoStatus == null || picoStatus.isEmpty()) {
 
-        Spacer(modifier = Modifier.padding(12.dp))
+            Text(text = "Status: pending")
+        }
+        else {
+            Text(text = "Status: ${picoStatus[11]}")
+        }
 
+        Spacer(modifier = Modifier.padding(4.dp))
 
+        updateNewestDataEachMinute(viewModel)
 
-        //TODO: get latest values (refresh few times per minute?)
-        // Latest Cyclist and Walker counts
+        Spacer(modifier = Modifier.padding(4.dp))
+
         if (newestServerData != null) {
             Text(
-                text = "Cyclists: " //+
-                        //newestServerData.getInt("").toString()
+                text = "Cyclists: " + newestServerData.get("currentHourCyclists").toString()
             )
             Text(
-                text = "Walkers: " //+
-                        //newestServerData.getInt("").toString()
+                text = "Walkers: " + newestServerData.get("currentHourWalkers").toString()
             )
         } else {
             Text(text = "Cyclists: ...")
             Text(text = "Walkers: ...")
         }
 
-
-
         Spacer(modifier = Modifier.height(12.dp))
-
 
         // Data Visualisation (Temperature, Pressure)
         if (allServerData != null) {
@@ -231,6 +241,10 @@ fun ConnectedScreen(
             ) {
                 LazyColumn() {
                     item {
+                        PlotData(allServerData, "currentHourCyclists", "Cyclists", 0)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        PlotData(allServerData, "currentHourWalkers", "Walkers", 0)
+                        Spacer(modifier = Modifier.height(12.dp))
                         PlotData(allServerData, "temperature", "Temperature (°C)", 2)
                         Spacer(modifier = Modifier.height(12.dp))
                         PlotData(allServerData, "pressure", "Pressure", 3)
@@ -238,10 +252,19 @@ fun ConnectedScreen(
                 }
             }
         } else {
-            Text(text = "Waiting for data...")
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 5.dp, vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "Waiting for data...")
+                Spacer(modifier = Modifier.padding(5.dp))
+                Button(onClick = getLast7DaysOfData) {
+                    Text(text = "Data Request")
+                }
+            }
         }
-
-
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -249,28 +272,56 @@ fun ConnectedScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Button(onClick = getLast7DaysOfData) {
-                Text(text = "Get last 7 days of data")
+            Button(onClick = getNewestData) {
+                Text(text = "Get newest data (manual update)")
             }
 
             Spacer(modifier = Modifier.weight(1f))
 
-
-            Button(onClick = setStatus) {
-                Text(text = "Set status to 1")
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            /*Button(onClick = getNewestData) {
-                Text(text = "Get the newest data (no implementation")
-            }*/
-
-            Spacer(modifier = Modifier.weight(1f))
         }
 
+        if (picoStatus == "{\"status\": 1}") {
+            Button(onClick = toggleStatus,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Green
+                )) {
+                Text(text = "Toggle status to 0",
+                    color = Color.Black)
+            }
+        }
+        else {
+            Button(onClick = toggleStatus,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Red
+                )) {
+                Text(text = "Toggle status to 1")
+            }
+        }
         Spacer(modifier = Modifier.padding(12.dp))
     }
+}
+
+@Composable
+fun updateNewestDataEachMinute(viewModel: MqttViewModel) {
+    var secondsLeft by remember { mutableStateOf(60) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (secondsLeft == 0) {
+                getLast7DaysOfData(viewModel)
+                secondsLeft = 60
+            }
+            delay(1000)
+            secondsLeft--
+        }
+    }
+
+    Text(text = "Time until data refresh: $secondsLeft")
+}
+
+private fun getAllData(viewModel: MqttViewModel) {
+    getLast7DaysOfData(viewModel)
+    //getNewestData(viewModel)
 }
 
 private fun getLast7DaysOfData(viewModel: MqttViewModel) {
@@ -279,17 +330,25 @@ private fun getLast7DaysOfData(viewModel: MqttViewModel) {
     viewModel.publishMessage("skynet/on_get_data", "{\"startDate\":${now-weekInMillis},\"endDate\":$now}")
 }
 
-private fun getNewestData(viewModel: MqttViewModel) {
-    // Maybe useless? idk yet im too lazy rn
-}
+/*private fun getNewestData(viewModel: MqttViewModel) {
+    val now = System.currentTimeMillis()
+    val twoMinuteInMillis = 2 * 60 * 1000
+    viewModel.publishMessage("skynet/on_get_data","{\"startDate\":${now-twoMinuteInMillis},\"endDate\":$now}" )
+}*/
 
-private fun setStatus(viewModel: MqttViewModel) {
-    viewModel.publishMessage("skynet/mqtt_set_status", "{\"status\":1}")
 
+private fun toggleStatus(viewModel: MqttViewModel, currentStatus: String?) {
+    if (currentStatus == "{\"status\":1}") {
+        viewModel.publishMessage("skynet/mqtt_set_status", "{\"status\":0}")
+    }
+    else {
+        viewModel.publishMessage("skynet/mqtt_set_status", "{\"status\":1}")
+    }
 }
 
 private fun connectToServer(viewModel: MqttViewModel) {
     viewModel.start()
+    viewModel.publishMessage("skynet/mqtt_set_status","{\"status\":1}" )
 }
 
 @Composable
@@ -306,7 +365,7 @@ fun NoConnectionPreview() {
     }
 }
 
-@Preview
+/*@Preview
 @Composable
 fun ConnectedPreview() {
     MyApplicationTheme {
@@ -353,7 +412,9 @@ fun ConnectedPreview() {
 
             getLast7DaysOfData = {},
             getNewestData = {},
-            setStatus = {}
+            getAllData = {},
+            toggleStatus = {},
+            viewModel
         )
     }
-}
+}*/
