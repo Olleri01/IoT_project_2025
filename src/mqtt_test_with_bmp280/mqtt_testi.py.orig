@@ -26,11 +26,19 @@ luminance_sensor = CRT00549L_masiina.CRT00549L()
 def collect_data():
     data_message = {"datetime": time.time(),
         "currentHourWalkers":0,
+<<<<<<< HEAD
         "currentHourCyclists": 	0,
         "location": "Oulu, Akselin WC",
         "temperature":bmp280.temperature,
         "luminosity": 	luminance_sensor.read_luminance(),
         "humidity": humidity_sensor.read_humidity(),
+=======
+        "currentHourCyclists": 0,
+        "location": "asdasddfg",
+        "temperature":bmp280.temperature,
+        "luminosity": 0.0,
+        "humidity": 0.0,
+>>>>>>> 74a41266f38bfc24deccf1021f732c2378266877
         "pressure": bmp280.pressure,
         }
     print(data_message)
@@ -68,10 +76,10 @@ queryt datakyselyitä varten
 
 try: 
     print(f"Connecting to {config.WIFI_SSID}")
-    wifi.radio.connect(config.WIFI_SSID, config.WIFI_PWD)
+    wifi.radio.connect("NokiaXR21", "Teodoliitti123")
     print(f"Connected to {config.WIFI_SSID}")
-except:
-    print("wifi connection not succesfull s")
+except err:
+    print("wifi connection not succesfull %s", err)
 
 #NTP.begin("pool.ntp.org", "time.nist.gov");
 

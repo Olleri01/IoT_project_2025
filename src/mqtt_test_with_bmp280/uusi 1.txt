@@ -1,0 +1,63 @@
+const temp = msg.payload
+
+if(temp.datetime){
+    msg.timestamp = temp.datetime * 1000;
+}
+
+msg.payload = {
+    currentHourWalkers: Number(temp.currentHourWalkers),
+    currentHourCyclists: Number(temp.currentHourCyclists),
+    temperature: Number(temp.temperature),
+    luminosity: Number(temp.luminosity),
+    humidity: Number(temp.humidity),
+    pressure: Number(temp.pressure/1000.0),
+}
+
+msg.measurement = "pico_data"
+return msg;
+
+
+
+//https://docs.influxdata.com/flux/v0/stdlib/universe/pivot/
+
+if(msg.payload.startDate == null || msg.payload.endDate == null){
+    //if no time range specified, return last weeks data
+    msg.query = `from(bucket:"iot_25_data") 
+    |>range(start: 1w) 
+    |> filter(fn:(r) => r["_measurement"] == "pico_data")
+    |> keep(columns: ["_time","_value","_field"])`
+
+
+}else{
+
+const tempStartTime = new Date(msg.payload.startDate).toISOString();
+const tempEndTime = new Date(msg.payload.endDate).toISOString();
+
+msg.query = `from(bucket:"iot_25_data") 
+|>range(start: ${tempStartTime},stop: ${tempEndTime}) 
+|> filter(fn:(r) => r["_measurement"] == "pico_data")
+|> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+|> keep(columns: ["_time","pressure","humidity","luminosity","currentHourWalkers","currentHourCyclists", "temperature"])`
+}
+return msg;
+
+
+/*
+
+msg.query = `from(bucket:"iot_25_data") |>range(start: ${tempStartTime},stop: ${tempEndTime}) 
+|> filter(fn:(r) => r["_measurement"] == "pico_data")
+|> keep(columns: ["_time","_value","_field"])`
+*/
+
+
+"""
+app_id
+tfd9e2c6
+app_secret
+I1CuYu._huO6jjvV
+
+influx db
+api keys
+
+ObkmhtNKFix5UtNsmH6tMAHzmYAPi9zLf_--WB2Q3tK9BFOiNAWbL2OzXq0YehAkbCaZWqbGVmb76l2C0PeWJA==
+"""
