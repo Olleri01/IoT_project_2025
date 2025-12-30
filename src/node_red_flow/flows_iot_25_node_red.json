@@ -1,0 +1,333 @@
+[
+    {
+        "id": "a04425bc6a9a1675",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "6837bce5c7960946",
+        "type": "mqtt-broker",
+        "name": "emqx_broker",
+        "broker": "aae0fdec.ala.eu-central-1.emqxsl.com",
+        "port": "8883",
+        "tls": "",
+        "clientid": "node_red_client_id1",
+        "autoConnect": true,
+        "usetls": true,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "4b7af768dd978a1a",
+        "type": "influxdb",
+        "hostname": "127.0.0.1",
+        "port": 8086,
+        "protocol": "http",
+        "database": "iot_25_data",
+        "name": "iot_25_data",
+        "usetls": false,
+        "tls": "",
+        "influxdbVersion": "2.0",
+        "url": "http://localhost:8086",
+        "timeout": 10,
+        "rejectUnauthorized": true
+    },
+    {
+        "id": "f0073d552c177cbb",
+        "type": "mqtt-broker",
+        "name": "test_connection_to_emqx_generic",
+        "broker": "broker.emqx.io",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "9f4c134aeafcc418",
+        "type": "mqtt in",
+        "z": "a04425bc6a9a1675",
+        "name": "",
+        "topic": "skynet/intel_data",
+        "qos": "1",
+        "datatype": "auto-detect",
+        "broker": "6837bce5c7960946",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 120,
+        "y": 400,
+        "wires": [
+            [
+                "fd9ea8c392eadbd3"
+            ]
+        ]
+    },
+    {
+        "id": "446e1931b5f551dd",
+        "type": "influxdb out",
+        "z": "a04425bc6a9a1675",
+        "influxdb": "4b7af768dd978a1a",
+        "name": "",
+        "measurement": "pico_data",
+        "precision": "",
+        "retentionPolicy": "",
+        "database": "database",
+        "precisionV18FluxV20": "ms",
+        "retentionPolicyV18Flux": "",
+        "org": "gambiinaluola",
+        "bucket": "iot_25_data",
+        "x": 680,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "fd9ea8c392eadbd3",
+        "type": "json",
+        "z": "a04425bc6a9a1675",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 370,
+        "y": 420,
+        "wires": [
+            [
+                "097b7124bca37ed0"
+            ]
+        ]
+    },
+    {
+        "id": "097b7124bca37ed0",
+        "type": "function",
+        "z": "a04425bc6a9a1675",
+        "name": "function 1",
+        "func": "const temp = msg.payload;\n\n// timestamp (optional)\nif (temp.datetime != null) {\n    msg.timestamp = temp.datetime * 1000;\n}\n\n// helper: add field only if valid number\nfunction addField(obj, key, value) {\n    const num = Number(value);\n    if (value !== null && value !== undefined && !isNaN(num)) {\n        obj[key] = num;\n    }\n}\n\nmsg.payload = {};\n\naddField(msg.payload, \"currentHourWalkers\", temp.currentHourWalkers);\naddField(msg.payload, \"currentHourCyclists\", temp.currentHourCyclists);\naddField(msg.payload, \"temperature\", temp.temperature);\naddField(msg.payload, \"luminosity\", temp.luminosity);\naddField(msg.payload, \"humidity\", temp.humidity);\naddField(msg.payload, \"pressure\", temp.pressure != null ? temp.pressure / 1000.0 : null);\n\n// If no valid fields exist, skip write\nif (Object.keys(msg.payload).length === 0) {\n    return null;\n}\n\nmsg.measurement = \"pico_data\";\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 420,
+        "y": 560,
+        "wires": [
+            [
+                "446e1931b5f551dd",
+                "19a7bb3092c66032"
+            ]
+        ]
+    },
+    {
+        "id": "8821343b6495399d",
+        "type": "influxdb in",
+        "z": "a04425bc6a9a1675",
+        "influxdb": "4b7af768dd978a1a",
+        "name": "Absolute range query wip",
+        "query": "",
+        "rawOutput": false,
+        "precision": "",
+        "retentionPolicy": "",
+        "org": "gambiinaluola",
+        "x": 250,
+        "y": 1100,
+        "wires": [
+            [
+                "95b2cde936f5172f",
+                "10b7ac273e966e25"
+            ]
+        ]
+    },
+    {
+        "id": "f0f7cc206cafb16e",
+        "type": "mqtt in",
+        "z": "a04425bc6a9a1675",
+        "name": "skynet/on_get_data",
+        "topic": "skynet/on_get_data",
+        "qos": "1",
+        "datatype": "auto-detect",
+        "broker": "6837bce5c7960946",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 150,
+        "y": 740,
+        "wires": [
+            [
+                "df68cf62df55485a"
+            ]
+        ]
+    },
+    {
+        "id": "10b7ac273e966e25",
+        "type": "json",
+        "z": "a04425bc6a9a1675",
+        "name": "",
+        "property": "payload",
+        "action": "obj",
+        "pretty": false,
+        "x": 190,
+        "y": 1400,
+        "wires": [
+            [
+                "cf6e038abc666797",
+                "d3692e5b5f5ce9d4"
+            ]
+        ]
+    },
+    {
+        "id": "cf6e038abc666797",
+        "type": "mqtt out",
+        "z": "a04425bc6a9a1675",
+        "name": "skynet/return_data",
+        "topic": "skynet/return_data",
+        "qos": "1",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "6837bce5c7960946",
+        "x": 570,
+        "y": 1420,
+        "wires": []
+    },
+    {
+        "id": "df68cf62df55485a",
+        "type": "function",
+        "z": "a04425bc6a9a1675",
+        "name": "function 2",
+        "func": "\n//https://docs.influxdata.com/flux/v0/stdlib/universe/pivot/\n\nif (msg.payload.startDate == null || msg.payload.endDate == null) {\n    //if no time range specified, return last weeks data\n    msg.query = `from(bucket:\"iot_25_data\") \n    |>range(start: 1w) \n    |> filter(fn:(r) => r[\"_measurement\"] == \"pico_data\")\n    |> keep(columns: [\"_time\",\"_value\",\"_field\"])`\n\n\n} else {\n\n    const tempStartTime = new Date(msg.payload.startDate).toISOString();\n    const tempEndTime = new Date(msg.payload.endDate).toISOString();\n\n    msg.query = `from(bucket:\"iot_25_data\") \n|>range(start: ${tempStartTime},stop: ${tempEndTime}) \n|> filter(fn:(r) => r[\"_measurement\"] == \"pico_data\")\n|> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n|> keep(columns: [\"_time\",\"pressure\",\"humidity\",\"luminosity\",\"currentHourWalkers\",\"currentHourCyclists\", \"temperature\"])`\n}\nreturn msg;\n\n\n/*\n\nmsg.query = `from(bucket:\"iot_25_data\") |>range(start: ${tempStartTime},stop: ${tempEndTime}) \n|> filter(fn:(r) => r[\"_measurement\"] == \"pico_data\")\n|> keep(columns: [\"_time\",\"_value\",\"_field\"])`\n*/",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 220,
+        "y": 940,
+        "wires": [
+            [
+                "8821343b6495399d",
+                "9d922deb4bff4826"
+            ]
+        ]
+    },
+    {
+        "id": "19a7bb3092c66032",
+        "type": "debug",
+        "z": "a04425bc6a9a1675",
+        "name": "debug 7",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 740,
+        "y": 640,
+        "wires": []
+    },
+    {
+        "id": "d3692e5b5f5ce9d4",
+        "type": "debug",
+        "z": "a04425bc6a9a1675",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 640,
+        "y": 1160,
+        "wires": []
+    },
+    {
+        "id": "9d922deb4bff4826",
+        "type": "debug",
+        "z": "a04425bc6a9a1675",
+        "name": "debug 2",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 600,
+        "y": 920,
+        "wires": []
+    },
+    {
+        "id": "95b2cde936f5172f",
+        "type": "debug",
+        "z": "a04425bc6a9a1675",
+        "name": "debug 3",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 540,
+        "y": 1060,
+        "wires": []
+    },
+    {
+        "id": "b67912dbc054ffb2",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "node-red-contrib-influxdb": "0.7.0"
+        }
+    }
+]
